@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/snow-mcp.svg)](https://badge.fury.io/py/snow-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A comprehensive, production-ready, and extensible MCP (Machine-Conversation Protocol) server for interacting with a ServiceNow instance. This package provides a rich set of pre-built tools for managing nearly every aspect of ITSM, ITOM, and App Dev within ServiceNow, all callable via a simple, unified interface.
+A comprehensive, production-ready, and extensible MCP (Model Context Protocol) server for interacting with a ServiceNow instance. This package provides a rich set of pre-built tools for managing nearly every aspect of ITSM, ITOM, and App Dev within ServiceNow, all callable via a simple, unified interface.
 
 It allows developers and automation engineers to build powerful client applications, scripts, and AI agents that can perform complex, multi-step operations in ServiceNow without needing to handle the intricacies of the REST API directly.
 
