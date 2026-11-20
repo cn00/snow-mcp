@@ -15,16 +15,16 @@ The script writes `.artifacts/lambda/lambda-src.zip` with `servicenow_mcp_server
 
 Use `lambda-src` or `lambda-layer` instead of `lambda-package` to build only one ZIP. Set `LAMBDA_ARTIFACT_DIR` to change the output directory. Existing ZIPs are never overwritten; move them or select another directory before rebuilding. AWS Lambda package and layer size limits still apply.
 
-Use an API Gateway HTTP API with Lambda proxy integration and payload format 2.0. Route `/mcp`, the OAuth endpoints, and the `/.well-known` discovery endpoints to the handler. `SNOW_MCP_PUBLIC_BASE_URL` must match the externally reachable HTTPS base URL. Configure an exact Entra web redirect URI for its `/auth/callback` endpoint.
+Use an API Gateway HTTP API with Lambda proxy integration and payload format 2.0. Route `/mcp`, the OAuth endpoints, and the `/.well-known` discovery endpoints to the handler. `SNOW_MCP_PUBLIC_BASE_URL` must match the externally reachable HTTPS origin without a path. Configure an exact Entra web redirect URI for the resulting `/auth/callback` endpoint.
 
 For a public service prefix, set both values, for example:
 
 ```bash
-SNOW_MCP_PUBLIC_BASE_URL=https://mcp.example.com/snow
+SNOW_MCP_PUBLIC_BASE_URL=https://mcp.example.com
 SNOW_MCP_SERVICE_PREFIX=/snow
 ```
 
-The public MCP endpoint is `https://mcp.example.com/snow/mcp` and the Entra redirect URI is `https://mcp.example.com/snow/auth/callback`. The public base URL controls advertised OAuth URLs; it does not strip paths in API Gateway events. The optional service prefix tells the Lambda adapter to remove `/snow` when the gateway includes it. If the gateway has already stripped the prefix, the adapter accepts `/mcp` and `/auth/callback` unchanged. The service prefix only applies to the Lambda entry point.
+The public MCP endpoint is `https://mcp.example.com/snow/mcp` and the Entra redirect URI is `https://mcp.example.com/snow/auth/callback`. The service prefix is appended to the public base URL when constructing advertised OAuth URLs. It also tells the Lambda adapter to remove `/snow` when the gateway includes it. If the gateway has already stripped the prefix, the adapter accepts `/mcp` and `/auth/callback` unchanged. If the service prefix is unset, URLs and routes remain at the root. When upgrading an existing deployment, remove any path from `SNOW_MCP_PUBLIC_BASE_URL` and put it in `SNOW_MCP_SERVICE_PREFIX`; otherwise the base URL is rejected.
 
 The gateway must also forward the root-level path-aware OAuth discovery endpoints `/.well-known/oauth-protected-resource/snow/mcp` and `/.well-known/oauth-authorization-server/snow` to the same Lambda. Do not put `/snow` before `/.well-known`; discovery paths are rooted at the domain. Ensure `/snow/authorize`, `/snow/token`, `/snow/register`, and `/snow/auth/callback` also reach the Lambda, with the appropriate HTTP methods. If API Gateway uses a custom-domain API mapping, verify explicitly which prefixes are retained in its Lambda event and that the root-level discovery routes reach this integration.
 

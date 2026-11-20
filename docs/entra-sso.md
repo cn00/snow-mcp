@@ -5,7 +5,7 @@ This branch exposes an authenticated MCP server over Streamable HTTP. Tool input
 ## Prerequisites
 
 - Python 3.10 or later, an HTTPS endpoint for the MCP server, and access from the target Copilot client.
-- A single-tenant Microsoft Entra application with a client secret and an exposed delegated API scope for the MCP server. Configure v2 access tokens for this API and register `<public-base-url>/auth/callback` as a web redirect URI.
+- A single-tenant Microsoft Entra application with a client secret and an exposed delegated API scope for the MCP server. Configure v2 access tokens for this API and register `<public-base-url><service-prefix>/auth/callback` as a web redirect URI.
 - A ServiceNow API resource that accepts a delegated Entra access token acquired using the on-behalf-of (OBO) flow. Confirm its audience, scope, user mapping, and ACLs with the ServiceNow and identity administrators. This repository does not establish that the target instance supports this integration.
 
 ## Configuration
@@ -21,8 +21,8 @@ Supply the following environment variables to the server through your deployment
 | `SNOW_ENTRA_CLIENT_SECRET` | MCP application's client secret. |
 | `SNOW_ENTRA_MCP_SCOPE` | Unprefixed delegated scope name exposed by the MCP app, for example `mcp_access`. |
 | `SNOW_ENTRA_IDENTIFIER_URI` | Optional application ID URI; defaults to `api://<client-id>`. |
-| `SNOW_MCP_PUBLIC_BASE_URL` | External HTTPS base URL, including any public path prefix but without `/mcp`; loopback HTTP is allowed for development. |
-| `SNOW_MCP_SERVICE_PREFIX` | Optional Lambda-only API Gateway path prefix to strip from forwarded paths, for example `/snow`. |
+| `SNOW_MCP_PUBLIC_BASE_URL` | External HTTPS origin without a path, for example `https://mcp.example.com`; loopback HTTP is allowed for development. |
+| `SNOW_MCP_SERVICE_PREFIX` | Optional public path prefix, for example `/snow`; also stripped from forwarded Lambda paths when present. |
 | `SNOW_MCP_JWT_SIGNING_KEY` | Stable, high-entropy secret of at least 32 characters used by the OAuth proxy. |
 
 The MCP application must have the necessary delegated permission and consent for `SERVICENOW_OBO_SCOPE`. The outbound request uses an OBO token, not the client-facing MCP token. The HTTPS certificate presented by ServiceNow must be trusted by the Python environment.
@@ -34,7 +34,7 @@ python -m pip install -e .
 snow-mcp --host 127.0.0.1 --port 8000
 ```
 
-Terminate TLS at a trusted reverse proxy and route the MCP endpoint, OAuth endpoints, and `/.well-known` discovery paths to the service. Prevent clients from bypassing the proxy. The public MCP URL is `<public-base-url>/mcp`. The default OAuth state and token storage is local; do not assume registrations or sessions work across replicas without suitable shared, encrypted storage.
+Terminate TLS at a trusted reverse proxy and route the MCP endpoint, OAuth endpoints, and `/.well-known` discovery paths to the service. Prevent clients from bypassing the proxy. The public MCP URL is `<public-base-url><service-prefix>/mcp`; the prefix is empty when unset. For an existing deployment with a path in `SNOW_MCP_PUBLIC_BASE_URL`, move that path to `SNOW_MCP_SERVICE_PREFIX`; a base URL containing a path is rejected. The default OAuth state and token storage is local; do not assume registrations or sessions work across replicas without suitable shared, encrypted storage.
 
 `snow-mcp --list-tools` uses an internal stdio process to list tools; normal tool calls require authenticated HTTP.
 
