@@ -56,9 +56,9 @@ The adapter creates a stateless Streamable HTTP app with JSON responses for each
 
 ## OAuth storage limitation
 
-The existing FastMCP OAuth proxy uses local persistent state for client registrations, authorization transactions, and upstream tokens. Lambda execution environments have isolated ephemeral filesystems, and their default home directory may not be writable. Merely configuring a writable temporary directory does not share state across environments or preserve it across cold starts.
+FastMCP OAuth state includes client registrations, authorization transactions, and upstream tokens. Lambda execution environments have isolated ephemeral filesystems, so the default local storage cannot share state across environments or survive cold starts.
 
-Consequently, dynamic registration, OAuth callbacks, token refresh, and authenticated MCP calls are **not production-ready on Lambda** until the OAuth provider is configured with a shared persistent store, encryption at rest, and stable signing and encryption keys. The current `build_mcp_auth()` does not configure such a shared store. Alternatively, deploy the existing server on a suitable long-running host. Protect secrets using an AWS-managed secret store and never log tokens.
+Set `SNOW_MCP_REDIS_URL` and `SNOW_MCP_REDIS_ENCRYPTION_KEY` as documented in [entra-sso.md](entra-sso.md) to use encrypted shared Redis storage. Use stable signing and encryption keys, TLS, restricted network access, and a Redis persistence and eviction policy appropriate for OAuth state. Store credentials and keys in an AWS-managed secret store and never log them. If Lambda is in a VPC, allow access both to Redis and to the Entra endpoints. Rebuild and deploy both source and the dependency layer after changing dependencies. Validate login, token refresh, cold starts, and concurrent invocations in the target environment; local storage remains unsuitable for production Lambda.
 
 ## Validation
 

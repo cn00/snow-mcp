@@ -1,6 +1,7 @@
 """AWS Lambda adapter for the authenticated Streamable HTTP MCP server."""
 
 import os
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 os.environ["XDG_DATA_HOME"] = "/tmp/snow-mcp"
@@ -29,6 +30,19 @@ def handler(event, context):
     app = create_mcp_instance(auth=auth).http_app(
         transport="http", stateless_http=True, json_response=True
     )
+    redis_client = getattr(auth, "_snow_redis_client", None)
+    if redis_client is not None:
+        original_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def lifespan(application):
+            try:
+                async with original_lifespan(application) as state:
+                    yield state
+            finally:
+                await redis_client.aclose()
+
+        app.router.lifespan_context = lifespan
     issuer_path = urlsplit(str(getattr(auth, "issuer_url", "") or "")).path.rstrip("/")
     metadata_path = "/.well-known/oauth-authorization-server"
     if issuer_path and not any(route.path == metadata_path + issuer_path for route in app.routes):

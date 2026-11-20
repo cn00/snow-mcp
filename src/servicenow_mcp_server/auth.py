@@ -118,7 +118,8 @@ def build_mcp_auth():
     from fastmcp.server.auth.providers.azure import AzureProvider
 
     config = EntraMcpConfig.from_environment()
-    return AzureProvider(
+    client_storage, redis_client = _build_redis_storage()
+    provider = AzureProvider(
         client_id=config.client_id,
         client_secret=config.client_secret,
         tenant_id=config.tenant_id,
@@ -126,7 +127,37 @@ def build_mcp_auth():
         required_scopes=[config.delegated_scope],
         base_url=config.public_base_url,
         jwt_signing_key=config.jwt_signing_key,
+        client_storage=client_storage,
     )
+    provider._snow_redis_client = redis_client
+    return provider
+
+
+def _build_redis_storage():
+    redis_url = os.getenv("SNOW_MCP_REDIS_URL")
+    if not redis_url:
+        return None, None
+
+    parsed_url = urlsplit(redis_url)
+    if (
+        parsed_url.scheme not in {"redis", "rediss"}
+        or not parsed_url.hostname
+        or parsed_url.query
+        or parsed_url.fragment
+        or (parsed_url.scheme == "redis" and parsed_url.hostname not in {"localhost", "127.0.0.1", "::1"})
+    ):
+        raise ValueError("SNOW_MCP_REDIS_URL must use rediss://, except for local loopback.")
+
+    from cryptography.fernet import Fernet
+    from key_value.aio.stores.redis import RedisStore
+    from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+    from redis.asyncio import Redis
+
+    encryption_key = os.environ["SNOW_MCP_REDIS_ENCRYPTION_KEY"]
+    fernet = Fernet(encryption_key.encode("ascii"))
+    redis_client = Redis.from_url(redis_url, decode_responses=True)
+    storage = FernetEncryptionWrapper(RedisStore(client=redis_client), fernet=fernet)
+    return storage, redis_client
 
 
 @lru_cache(maxsize=1)

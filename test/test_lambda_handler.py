@@ -2,7 +2,7 @@ import importlib
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 
 class LambdaHandlerTests(unittest.TestCase):
@@ -115,6 +115,16 @@ class LambdaHandlerTests(unittest.TestCase):
         self.assertIn("result", json.loads(initialization_result["body"]))
         self.assertEqual(tools_result["statusCode"], 200)
         self.assertTrue(json.loads(tools_result["body"])["result"]["tools"])
+
+    def test_redis_client_is_closed_after_invocation(self):
+        from fastmcp.server.auth import StaticTokenVerifier
+
+        auth = StaticTokenVerifier(tokens={})
+        auth._snow_redis_client = Mock(aclose=AsyncMock())
+        with patch.object(self.lambda_module, "build_mcp_auth", return_value=auth):
+            response = self.handler(self.event("/mcp", "POST", {}), None)
+        self.assertEqual(response["statusCode"], 401)
+        auth._snow_redis_client.aclose.assert_awaited_once()
 
     def test_authenticated_prefixed_mcp_request(self):
         from fastmcp.server.auth import StaticTokenVerifier

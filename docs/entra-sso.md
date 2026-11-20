@@ -24,8 +24,12 @@ Supply the following environment variables to the server through your deployment
 | `SNOW_MCP_PUBLIC_BASE_URL` | External HTTPS origin without a path, for example `https://mcp.example.com`; loopback HTTP is allowed for development. |
 | `SNOW_MCP_SERVICE_PREFIX` | Optional public path prefix, for example `/snow`; also stripped from forwarded Lambda paths when present. |
 | `SNOW_MCP_JWT_SIGNING_KEY` | Stable, high-entropy secret of at least 32 characters used by the OAuth proxy. |
+| `SNOW_MCP_REDIS_URL` | Optional Redis URL for shared OAuth state. Remote servers require `rediss://`; `redis://` is allowed only for loopback development. Query parameters are not supported. |
+| `SNOW_MCP_REDIS_ENCRYPTION_KEY` | Fernet key for encrypting OAuth data in Redis, required when `SNOW_MCP_REDIS_URL` is set. Use the same stable secret across instances. |
 
 The MCP application must have the necessary delegated permission and consent for `SERVICENOW_OBO_SCOPE`. The outbound request uses an OBO token, not the client-facing MCP token. The HTTPS certificate presented by ServiceNow must be trusted by the Python environment.
+
+Generate a Redis encryption key with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` and store it as a secret. Do not generate a new key per invocation. Use a dedicated Redis database or instance for this MCP deployment; the OAuth storage collection names are shared. Rotating the encryption key or replacing local storage invalidates existing OAuth state, so clients may need to register and sign in again.
 
 ## Run
 
@@ -34,7 +38,7 @@ python -m pip install -e .
 snow-mcp --host 127.0.0.1 --port 8000
 ```
 
-Terminate TLS at a trusted reverse proxy and route the MCP endpoint, OAuth endpoints, and `/.well-known` discovery paths to the service. Prevent clients from bypassing the proxy. The public MCP URL is `<public-base-url><service-prefix>/mcp`; the prefix is empty when unset. For an existing deployment with a path in `SNOW_MCP_PUBLIC_BASE_URL`, move that path to `SNOW_MCP_SERVICE_PREFIX`; a base URL containing a path is rejected. The default OAuth state and token storage is local; do not assume registrations or sessions work across replicas without suitable shared, encrypted storage.
+Terminate TLS at a trusted reverse proxy and route the MCP endpoint, OAuth endpoints, and `/.well-known` discovery paths to the service. Prevent clients from bypassing the proxy. The public MCP URL is `<public-base-url><service-prefix>/mcp`; the prefix is empty when unset. For an existing deployment with a path in `SNOW_MCP_PUBLIC_BASE_URL`, move that path to `SNOW_MCP_SERVICE_PREFIX`; a base URL containing a path is rejected. Configure Redis for shared OAuth state across replicas; otherwise the default storage is local and is not shared.
 
 `snow-mcp --list-tools` uses an internal stdio process to list tools; normal tool calls require authenticated HTTP.
 
