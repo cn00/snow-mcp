@@ -11,9 +11,33 @@ Install the project and its dependencies into the workspace `.venv` first, then 
 bash scripts/wsl-dev.sh lambda-package
 ```
 
-The script writes `.artifacts/lambda/lambda-src.zip` with `servicenow_mcp_server/` at its root, and `.artifacts/lambda/lambda-layer.zip` with dependencies under `python/lib/pythonX.Y/site-packages/`. The project editable-install link and metadata are excluded from the layer. The Python version is taken from `.venv`; its Linux runtime, native libraries and CPU architecture must match the target Lambda environment.
+The script writes `.artifacts/lambda-src.zip` with `servicenow_mcp_server/` at its root, and `.artifacts/lambda-layer.zip` with dependencies under `python/lib/pythonX.Y/site-packages/`. The project editable-install link and metadata are excluded from the layer. The Python version is taken from `.venv`; its Linux runtime, native libraries and CPU architecture must match the target Lambda environment.
 
 Use `lambda-src` or `lambda-layer` instead of `lambda-package` to build only one ZIP. Set `LAMBDA_ARTIFACT_DIR` to change the output directory. Existing ZIPs are never overwritten; move them or select another directory before rebuilding. AWS Lambda package and layer size limits still apply.
+
+## Simulate API Gateway locally
+
+With AWS SAM CLI and Docker installed, build `.artifacts/lambda-layer.zip` if it does not already exist:
+
+```bash
+bash scripts/wsl-dev.sh lambda-layer
+NO_PROXY="${NO_PROXY:+$NO_PROXY,}localhost,127.0.0.1,::1" \
+no_proxy="${no_proxy:+$no_proxy,}localhost,127.0.0.1,::1" \
+sam local start-api --template-file template.local.yaml --port 3000 --warm-containers LAZY
+```
+
+SAM starts its own Lambda container; it does not forward to the container in `docker-compose.yaml`. The loopback proxy bypass prevents SAM's requests to the local Lambda container from being sent through an HTTP proxy. The template uses the current `src/` directory, the dependency layer ZIP, and HTTP API payload format 2.0. Its Entra values are nonfunctional local placeholders, not real credentials. It advertises `http://localhost:3000` with the `/snow-mcp` prefix, so discovery and unauthenticated MCP requests can be tested directly:
+
+```bash
+curl --noproxy '*' -i http://localhost:3000/.well-known/oauth-protected-resource/snow-mcp/mcp
+curl --noproxy '*' -i http://localhost:3000/.well-known/oauth-authorization-server/snow-mcp
+curl --noproxy '*' -i -X POST http://localhost:3000/snow-mcp/mcp \
+	-H 'Content-Type: application/json' \
+	-H 'Accept: application/json, text/event-stream' \
+	-d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"local-test","version":"1.0"}}}'
+```
+
+Discovery should return HTTP 200; the MCP request should return HTTP 401 without a bearer token. For real sign-in, supply a private SAM `--env-vars` JSON file keyed by `LocalMcpFunction` with the required settings from [entra-sso.md](entra-sso.md), including the matching public origin and service prefix. Do not commit credentials. Entra redirect URI and HTTPS requirements still apply, and a local test does not replace the shared OAuth storage required in production.
 
 Use an API Gateway HTTP API with Lambda proxy integration and payload format 2.0. Route `/mcp`, the OAuth endpoints, and the `/.well-known` discovery endpoints to the handler. `SNOW_MCP_PUBLIC_BASE_URL` must match the externally reachable HTTPS origin without a path. Configure an exact Entra web redirect URI for the resulting `/auth/callback` endpoint.
 
