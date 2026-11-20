@@ -1,27 +1,42 @@
 # src/servicenow_mcp_server/utils.py
 
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Awaitable, Callable, Optional
 
 class ServiceNowClient:
     """A client for making authenticated requests to the ServiceNow API."""
 
-    def __init__(self, instance_url: str, username: str, password: str):
+    def __init__(
+        self,
+        instance_url: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        token_provider: Optional[Callable[[], Awaitable[str]]] = None,
+    ):
         if not instance_url.endswith('/'):
             instance_url += '/'
         
         self.base_url = instance_url
-        self._auth = (username, password)
+        if token_provider is None and (username is None or password is None):
+            raise ValueError("Basic credentials or a token provider are required.")
+        self._auth = (username, password) if token_provider is None else None
+        self._token_provider = token_provider
         self._client: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self):
         """Initializes the httpx client when entering an 'async with' block."""
         
-        # THE FIX IS HERE: Add the 'verify=False' argument.
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if self._token_provider:
+            access_token = await self._token_provider()
+            if not access_token:
+                raise RuntimeError("The token provider returned an empty access token.")
+            headers["Authorization"] = f"Bearer {access_token}"
         self._client = httpx.AsyncClient(
-            auth=self._auth, 
+            auth=self._auth,
             base_url=self.base_url,
-            verify=False  # This tells httpx to skip SSL certificate verification
+            headers=headers,
+            verify=True,
         )
         
         return self
