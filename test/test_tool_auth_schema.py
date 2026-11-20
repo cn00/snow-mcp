@@ -1,5 +1,10 @@
 import importlib
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import httpx
+from fastmcp import Client
 
 
 TOOL_MODULES = (
@@ -31,6 +36,42 @@ class ToolAuthSchemaTests(unittest.TestCase):
                 self.assertTrue(
                     {"instance_url", "username", "password"}.isdisjoint(properties)
                 )
+
+
+class DelegatedToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_incident_tool_sends_exchanged_token(self):
+        incident_tools = importlib.import_module(
+            "servicenow_mcp_server.incident_management.incident_tools"
+        )
+        requests = []
+
+        def handle_request(request):
+            requests.append(request)
+            return httpx.Response(200, json={"result": {"sys_id": "incident-id"}})
+
+        original_client = httpx.AsyncClient
+        exchange = AsyncMock(return_value="servicenow-token")
+        with (
+            patch.dict("os.environ", {"SERVICENOW_INSTANCE": "https://instance.service-now.com"}),
+            patch("fastmcp.server.dependencies.get_access_token", return_value=SimpleNamespace(token="entra-token")),
+            patch("servicenow_mcp_server.auth._service_now_token_provider", return_value=exchange),
+            patch(
+                "servicenow_mcp_server.utils.httpx.AsyncClient",
+                side_effect=lambda **kwargs: original_client(
+                    transport=httpx.MockTransport(handle_request), **kwargs
+                ),
+            ),
+        ):
+            async with Client(incident_tools.mcp) as client:
+                tools = await client.list_tools()
+                incident_tool = next(tool for tool in tools if tool.name == "create_incident")
+                self.assertNotIn("Credentials must be provided", incident_tool.description)
+                await client.call_tool("get_incident", {"params": {"sys_id": "incident-id"}})
+
+        exchange.assert_awaited_once_with("entra-token")
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0].url.host, "instance.service-now.com")
+        self.assertEqual(requests[0].headers["Authorization"], "Bearer servicenow-token")
 
 
 if __name__ == "__main__":

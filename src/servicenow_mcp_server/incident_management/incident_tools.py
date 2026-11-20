@@ -2,8 +2,7 @@
 
 """
 This module defines and registers tools for ServiceNow Incident Management.
-Each tool expects all required parameters, including ServiceNow credentials,
-to be passed directly in the 'params' object of the tool call.
+Tool calls use the authenticated user's delegated ServiceNow access.
 """
 
 from typing import Dict, Any, Optional, List
@@ -39,7 +38,6 @@ def register_tools(mcp: FastMCP):
 class BaseToolParams(ServiceNowToolParams):
     pass
 
-# Each tool-specific parameter model inherits the base credentials
 class CreateIncidentParams(BaseToolParams):
     short_description: str = Field(..., description="A brief, one-line summary of the incident.")
     description: Optional[str] = Field(None, description="A detailed description of the incident.")
@@ -100,7 +98,7 @@ class UpdateIncidentParams(BaseToolParams):
 
 @mcp.tool()
 async def create_incident(params: CreateIncidentParams) -> Dict[str, Any]:
-    """Creates a new incident. Credentials must be provided in the params object."""
+    """Creates a new incident."""
     async with ServiceNowClient(instance_url=params.instance_url, username=params.username, password=params.password) as client:
         incident_data = params.model_dump(exclude={"instance_url", "username", "password"}, exclude_unset=True)
         return await client.send_request("POST", "/api/now/table/incident", data=incident_data)
