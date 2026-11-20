@@ -100,7 +100,6 @@ def main():
     )
     # The only CLI argument is to list tools.
     parser.add_argument('--list-tools', action='store_true', help='List all available tools and their descriptions, then exit.')
-    parser.add_argument('--transport', choices=('stdio', 'http'), default='stdio', help='Server transport. HTTP enables Entra OAuth for remote clients.')
     parser.add_argument('--host', default='127.0.0.1', help='HTTP bind address.')
     parser.add_argument('--port', type=int, default=8000, help='HTTP bind port.')
     # This hidden argument prevents an infinite loop.
@@ -124,16 +123,12 @@ def main():
     # --- Default behavior: A human is running 'snow-mcp' interactively, or a client is connecting ---
     if sys.stdin.isatty():
         print_welcome_banner()
-        print(f"Starting ServiceNow MCP Server over {args.transport}...")
+        print("Starting ServiceNow MCP Server over HTTP...")
         print("Use '--list-tools' for a list of available tools.")
         print("Press Ctrl+C to exit.")
     
-    auth = build_mcp_auth() if args.transport == 'http' else None
-    mcp_instance = create_mcp_instance(auth=auth)
-    if args.transport == 'http':
-        mcp_instance.run(transport="http", host=args.host, port=args.port)
-    else:
-        mcp_instance.run(transport="stdio")
+    mcp_instance = create_mcp_instance(auth=build_mcp_auth())
+    mcp_instance.run(transport="http", host=args.host, port=args.port)
 
 if __name__ == "__main__":
     main()
