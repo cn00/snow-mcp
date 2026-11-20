@@ -18,7 +18,7 @@ class LambdaHandlerTests(unittest.TestCase):
         environment_patch = patch.dict("os.environ", environment)
         environment_patch.start()
         cls.addClassCleanup(environment_patch.stop)
-        cls.lambda_module = importlib.import_module("servicenow_mcp_server.lambda_handler")
+        cls.lambda_module = importlib.import_module("servicenow_mcp_server.lambda")
         cls.handler = staticmethod(cls.lambda_module.handler)
 
     def event(self, path, method="GET", body=None):
@@ -111,6 +111,70 @@ class LambdaHandlerTests(unittest.TestCase):
         self.assertIn("result", json.loads(initialization_result["body"]))
         self.assertEqual(tools_result["statusCode"], 200)
         self.assertTrue(json.loads(tools_result["body"])["result"]["tools"])
+
+    def test_authenticated_prefixed_mcp_request(self):
+        from fastmcp.server.auth import StaticTokenVerifier
+
+        auth = StaticTokenVerifier(tokens={"test-token": {"client_id": "test"}})
+        request = self.event(
+            "/snow/mcp", "POST", {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+        )
+        request["headers"]["authorization"] = "Bearer test-token"
+        request["headers"]["mcp-protocol-version"] = "2025-03-26"
+        with (
+            patch.dict("os.environ", {"SNOW_MCP_SERVICE_PREFIX": "/snow"}),
+            patch.object(self.lambda_module, "build_mcp_auth", return_value=auth),
+        ):
+            response = self.handler(request, None)
+
+        self.assertEqual(response["statusCode"], 200)
+        self.assertTrue(json.loads(response["body"])["result"]["tools"])
+
+    def test_prefixed_gateway_routes_and_discovery(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "SNOW_MCP_PUBLIC_BASE_URL": "https://mcp.example.com/snow",
+                "SNOW_MCP_SERVICE_PREFIX": "/snow",
+            },
+        ):
+            metadata = self.handler(
+                self.event("/.well-known/oauth-protected-resource/snow/mcp"), None
+            )
+            self.assertEqual(metadata["statusCode"], 200)
+            resource = json.loads(metadata["body"])
+            self.assertEqual(resource["resource"], "https://mcp.example.com/snow/mcp")
+
+            authorization = self.handler(
+                self.event("/.well-known/oauth-authorization-server/snow"), None
+            )
+            self.assertEqual(authorization["statusCode"], 200)
+            authorization_metadata = json.loads(authorization["body"])
+            self.assertEqual(authorization_metadata["issuer"], "https://mcp.example.com/snow")
+            self.assertEqual(
+                authorization_metadata["authorization_endpoint"],
+                "https://mcp.example.com/snow/authorize",
+            )
+
+            for path in ("/snow/mcp", "/mcp"):
+                response = self.handler(self.event(path, "POST", {}), None)
+                self.assertEqual(response["statusCode"], 401)
+                self.assertIn("/snow/mcp", response["headers"]["www-authenticate"])
+
+            callback = self.handler(self.event("/snow/auth/callback"), None)
+            self.assertNotEqual(callback["statusCode"], 404)
+
+    def test_service_prefix_is_validated_and_matches_whole_segments(self):
+        with patch.dict("os.environ", {"SNOW_MCP_SERVICE_PREFIX": "/snow/"}):
+            self.assertEqual(self.lambda_module._api_gateway_base_path(self.event("/snow/mcp")), "/snow")
+            self.assertEqual(self.lambda_module._api_gateway_base_path(self.event("/snowman/mcp")), "/")
+            self.assertEqual(self.lambda_module._api_gateway_base_path(self.event("/mcp")), "/")
+        for prefix in ("snow", "/snow/../other", "/snow?query=1", "/snow//other"):
+            with self.subTest(prefix=prefix), patch.dict(
+                "os.environ", {"SNOW_MCP_SERVICE_PREFIX": prefix}
+            ):
+                with self.assertRaises(ValueError):
+                    self.lambda_module._api_gateway_base_path(self.event("/snow/mcp"))
 
 
 if __name__ == "__main__":
