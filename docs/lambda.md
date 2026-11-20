@@ -1,6 +1,19 @@
 # AWS Lambda entry point
 
-The Lambda handler is `servicenow_mcp_server.lambda_handler.handler`. Package the project and its dependencies, including Mangum, in the Lambda deployment artifact. Configure the Entra and ServiceNow environment variables described in [entra-sso.md](entra-sso.md).
+The Lambda handler is `servicenow_mcp_server.lambda.handler`. Package the project and its dependencies, including Mangum, in the Lambda deployment artifact. Configure the Entra and ServiceNow environment variables described in [entra-sso.md](entra-sso.md).
+
+## Build ZIPs in WSL
+
+Install the project and its dependencies into the workspace `.venv` first, then run:
+
+```bash
+./.venv/bin/python -m pip install -e .
+bash scripts/wsl-dev.sh lambda-package
+```
+
+The script writes `.artifacts/lambda/lambda-src.zip` with `servicenow_mcp_server/` at its root, and `.artifacts/lambda/lambda-layer.zip` with dependencies under `python/lib/pythonX.Y/site-packages/`. The project editable-install link and metadata are excluded from the layer. The Python version is taken from `.venv`; its Linux runtime, native libraries and CPU architecture must match the target Lambda environment.
+
+Use `lambda-src` or `lambda-layer` instead of `lambda-package` to build only one ZIP. Set `LAMBDA_ARTIFACT_DIR` to change the output directory. Existing ZIPs are never overwritten; move them or select another directory before rebuilding. AWS Lambda package and layer size limits still apply.
 
 Use an API Gateway HTTP API with Lambda proxy integration and payload format 2.0. Route `/mcp`, the OAuth endpoints, and the `/.well-known` discovery endpoints to the handler. `SNOW_MCP_PUBLIC_BASE_URL` must match the externally reachable HTTPS base URL. Configure an exact Entra web redirect URI for its `/auth/callback` endpoint.
 
