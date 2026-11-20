@@ -21,7 +21,8 @@ Supply the following environment variables to the server through your deployment
 | `SNOW_ENTRA_CLIENT_SECRET` | MCP application's client secret. |
 | `SNOW_ENTRA_MCP_SCOPE` | Unprefixed delegated scope name exposed by the MCP app, for example `mcp_access`. |
 | `SNOW_ENTRA_IDENTIFIER_URI` | Optional application ID URI; defaults to `api://<client-id>`. |
-| `SNOW_MCP_PUBLIC_BASE_URL` | External HTTPS base URL without `/mcp`; loopback HTTP is allowed for development. |
+| `SNOW_MCP_PUBLIC_BASE_URL` | External HTTPS base URL, including any public path prefix but without `/mcp`; loopback HTTP is allowed for development. |
+| `SNOW_MCP_SERVICE_PREFIX` | Optional Lambda-only API Gateway path prefix to strip from forwarded paths, for example `/snow`. |
 | `SNOW_MCP_JWT_SIGNING_KEY` | Stable, high-entropy secret of at least 32 characters used by the OAuth proxy. |
 
 The MCP application must have the necessary delegated permission and consent for `SERVICENOW_OBO_SCOPE`. The outbound request uses an OBO token, not the client-facing MCP token. The HTTPS certificate presented by ServiceNow must be trusted by the Python environment.
