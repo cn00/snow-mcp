@@ -1,7 +1,47 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from servicenow_mcp_server.auth import EntraOnBehalfOfTokenProvider
+from servicenow_mcp_server.auth import EntraMcpConfig, EntraOnBehalfOfTokenProvider
+
+
+class EntraMcpConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.environment = {
+            "SNOW_ENTRA_TENANT_ID": "00000000-0000-0000-0000-000000000001",
+            "SNOW_ENTRA_CLIENT_ID": "00000000-0000-0000-0000-000000000002",
+            "SNOW_ENTRA_CLIENT_SECRET": "test-secret",
+            "SNOW_ENTRA_MCP_SCOPE": "mcp_access",
+            "SNOW_MCP_PUBLIC_BASE_URL": "https://mcp.example.com/",
+            "SNOW_MCP_JWT_SIGNING_KEY": "01234567890123456789012345678901",
+        }
+
+    def test_public_base_url_uses_single_configured_prefix(self):
+        for prefix, expected in (
+            ("", "https://mcp.example.com"),
+            ("/snow/", "https://mcp.example.com/snow"),
+            ("/api/snow", "https://mcp.example.com/api/snow"),
+        ):
+            with self.subTest(prefix=prefix), patch.dict(
+                "os.environ", {**self.environment, "SNOW_MCP_SERVICE_PREFIX": prefix}, clear=True
+            ):
+                self.assertEqual(EntraMcpConfig.from_environment().public_base_url, expected)
+
+    def test_public_base_url_rejects_paths(self):
+        for url in ("https://mcp.example.com/snow", "https://mcp.example.com/snow/"):
+            with self.subTest(url=url), patch.dict(
+                "os.environ",
+                {**self.environment, "SNOW_MCP_PUBLIC_BASE_URL": url, "SNOW_MCP_SERVICE_PREFIX": "/snow"},
+                clear=True,
+            ):
+                with self.assertRaisesRegex(ValueError, "without a path"):
+                    EntraMcpConfig.from_environment()
+
+    def test_invalid_prefix_is_rejected_by_auth_configuration(self):
+        with patch.dict(
+            "os.environ", {**self.environment, "SNOW_MCP_SERVICE_PREFIX": "/snow/../other"}, clear=True
+        ):
+            with self.assertRaisesRegex(ValueError, "SNOW_MCP_SERVICE_PREFIX"):
+                EntraMcpConfig.from_environment()
 
 
 class EntraOnBehalfOfTokenProviderTests(unittest.IsolatedAsyncioTestCase):

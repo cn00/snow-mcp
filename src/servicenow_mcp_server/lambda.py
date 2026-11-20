@@ -1,24 +1,18 @@
 """AWS Lambda adapter for the authenticated Streamable HTTP MCP server."""
 
-import os
-import re
 from urllib.parse import urlsplit
 
 from mangum import Mangum
 from starlette.routing import Route
 
-from servicenow_mcp_server.auth import build_mcp_auth
+from servicenow_mcp_server.auth import build_mcp_auth, get_service_prefix
 from servicenow_mcp_server.server import create_mcp_instance
 
 
 def _api_gateway_base_path(event):
-    prefix = os.getenv("SNOW_MCP_SERVICE_PREFIX", "").rstrip("/")
+    prefix = get_service_prefix()
     if not prefix:
         return "/"
-    if not re.fullmatch(r"/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*", prefix) or any(
-        segment in {".", ".."} for segment in prefix.split("/")
-    ):
-        raise ValueError("SNOW_MCP_SERVICE_PREFIX must be an absolute URL path prefix.")
 
     path = event.get("rawPath") or event.get("path") or ""
     if path == prefix or path.startswith(prefix + "/"):

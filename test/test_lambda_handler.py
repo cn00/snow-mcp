@@ -134,7 +134,7 @@ class LambdaHandlerTests(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "SNOW_MCP_PUBLIC_BASE_URL": "https://mcp.example.com/snow",
+                "SNOW_MCP_PUBLIC_BASE_URL": "https://mcp.example.com",
                 "SNOW_MCP_SERVICE_PREFIX": "/snow",
             },
         ):

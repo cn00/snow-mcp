@@ -2,11 +2,23 @@
 
 import asyncio
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from threading import Lock
 from urllib.parse import urlsplit
 from uuid import UUID
+
+
+def get_service_prefix():
+    prefix = os.getenv("SNOW_MCP_SERVICE_PREFIX", "").rstrip("/")
+    if not prefix:
+        return ""
+    if not re.fullmatch(r"/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*", prefix) or any(
+        segment in {".", ".."} for segment in prefix.split("/")
+    ):
+        raise ValueError("SNOW_MCP_SERVICE_PREFIX must be an absolute URL path prefix.")
+    return prefix
 
 
 @dataclass(frozen=True)
@@ -26,7 +38,7 @@ class EntraMcpConfig:
         client_secret = os.environ["SNOW_ENTRA_CLIENT_SECRET"]
         identifier_uri = os.getenv("SNOW_ENTRA_IDENTIFIER_URI", f"api://{client_id}")
         delegated_scope = os.environ["SNOW_ENTRA_MCP_SCOPE"]
-        public_base_url = os.environ["SNOW_MCP_PUBLIC_BASE_URL"].rstrip("/")
+        public_base_url = os.environ["SNOW_MCP_PUBLIC_BASE_URL"]
         jwt_signing_key = os.environ["SNOW_MCP_JWT_SIGNING_KEY"]
 
         parsed_url = urlsplit(public_base_url)
@@ -40,10 +52,12 @@ class EntraMcpConfig:
             or not parsed_url.hostname
             or parsed_url.username
             or parsed_url.password
+            or parsed_url.path not in ("", "/")
             or parsed_url.query
             or parsed_url.fragment
         ):
-            raise ValueError("SNOW_MCP_PUBLIC_BASE_URL must be an HTTPS URL.")
+            raise ValueError("SNOW_MCP_PUBLIC_BASE_URL must be an HTTPS origin without a path.")
+        public_base_url = public_base_url.rstrip("/") + get_service_prefix()
         if not identifier_uri or any(char.isspace() for char in identifier_uri):
             raise ValueError("SNOW_ENTRA_IDENTIFIER_URI is invalid.")
         if not delegated_scope or "/" in delegated_scope or any(
