@@ -30,4 +30,5 @@ sam/dev: sam/validate
 	sam local start-api \
 		--template-file $(SAM_TEMPLATE) \
 		--host $(SAM_HOST) \
-		--port $(SAM_PORT)
+		--port $(SAM_PORT) \
+		--warm-containers EAGER
