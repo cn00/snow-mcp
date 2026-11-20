@@ -7,7 +7,7 @@ This module defines generic tools for interacting with any ServiceNow table.
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 from fastmcp import FastMCP
-from servicenow_mcp_server.utils import ServiceNowClient
+from servicenow_mcp_server.utils import ServiceNowClient, ServiceNowToolParams
 
 # Create a local MCP instance for decorating tools in this file.
 mcp = FastMCP("ServiceNow Table Management Tools")
@@ -23,10 +23,8 @@ def register_tools(mcp: FastMCP):
 # ==============================================================================
 
 # This is the base model with credentials that all tools in this file will use.
-class BaseToolParams(BaseModel):
-    instance_url: str = Field(..., description="The full URL of the ServiceNow instance.")
-    username: str = Field(..., description="The username for authentication.")
-    password: str = Field(..., description="The password for authentication.", sensitive=True)
+class BaseToolParams(ServiceNowToolParams):
+    pass
 
 class ListTablesParams(BaseToolParams):
     # This parameter is optional. If provided, it filters the table list.

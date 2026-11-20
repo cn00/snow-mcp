@@ -7,7 +7,7 @@ This module defines tools for interacting with ServiceNow Script Includes.
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from fastmcp import FastMCP
-from servicenow_mcp_server.utils import ServiceNowClient
+from servicenow_mcp_server.utils import ServiceNowClient, ServiceNowToolParams
 
 # Local MCP instance for decorating tools
 mcp = FastMCP()
@@ -24,10 +24,8 @@ def register_tools(mcp: FastMCP):
 #  Pydantic Models
 # ==============================================================================
 
-class BaseToolParams(BaseModel):
-    instance_url: str = Field(..., description="The full URL of the ServiceNow instance.")
-    username: str = Field(..., description="The username for authentication.")
-    password: str = Field(..., description="The password for authentication.", sensitive=True)
+class BaseToolParams(ServiceNowToolParams):
+    pass
 
 class ListScriptIncludesParams(BaseToolParams):
     name_filter: Optional[str] = Field(None, description="A search term to filter Script Includes by name.")

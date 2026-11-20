@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from fastmcp import FastMCP
 from typing import List 
-from servicenow_mcp_server.utils import ServiceNowClient
+from servicenow_mcp_server.utils import ServiceNowClient, ServiceNowToolParams
 
 # Create a local MCP instance for decorating tools in this file.
 mcp = FastMCP()
@@ -33,10 +33,8 @@ def register_tools(mcp: FastMCP):
 # ==============================================================================
 
 # Base model with credentials for all tools in this file.
-class BaseToolParams(BaseModel):
-    instance_url: str = Field(..., description="The full URL of the ServiceNow instance.")
-    username: str = Field(..., description="The username for authentication.")
-    password: str = Field(..., description="The password for authentication.", sensitive=True)
+class BaseToolParams(ServiceNowToolParams):
+    pass
 
 class ListCatalogItemsParams(BaseToolParams):
     limit: int = Field(20, description="The maximum number of items to return.")

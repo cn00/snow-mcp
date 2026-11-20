@@ -29,9 +29,13 @@ class ServiceNowClientAuthTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertIs(client._client.kwargs["verify"], True)
 
-    def test_requires_a_complete_authentication_strategy(self):
-        with self.assertRaises(ValueError):
-            ServiceNowClient("https://instance.service-now.com")
+    def test_rejects_basic_credentials(self):
+        with self.assertRaisesRegex(ValueError, "Basic authentication is no longer supported"):
+            ServiceNowClient(
+                "https://instance.service-now.com",
+                username="user",
+                password="password",
+            )
 
 
 if __name__ == "__main__":

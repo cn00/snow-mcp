@@ -9,7 +9,7 @@ to be passed directly in the 'params' object of the tool call.
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from fastmcp import FastMCP
-from servicenow_mcp_server.utils import ServiceNowClient
+from servicenow_mcp_server.utils import ServiceNowClient, ServiceNowToolParams
 
 mcp = FastMCP(name="ServiceNow Incident Management Tools")
 # ==============================================================================
@@ -36,11 +36,8 @@ def register_tools(mcp: FastMCP):
 #  Pydantic Models for Input Schemas
 # ==============================================================================
 
-class BaseToolParams(BaseModel):
-    """A base model containing the required ServiceNow credentials for any tool call."""
-    instance_url: str = Field(..., description="The full URL of the ServiceNow instance (e.g., https://my-instance.service-now.com).")
-    username: str = Field(..., description="The username for authentication.")
-    password: str = Field(..., description="The password for authentication.", sensitive=True)
+class BaseToolParams(ServiceNowToolParams):
+    pass
 
 # Each tool-specific parameter model inherits the base credentials
 class CreateIncidentParams(BaseToolParams):

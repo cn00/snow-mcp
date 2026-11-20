@@ -1,7 +1,25 @@
 # src/servicenow_mcp_server/utils.py
 
 import httpx
+import os
 from typing import Dict, Any, Awaitable, Callable, Optional
+from pydantic import BaseModel
+
+
+class ServiceNowToolParams(BaseModel):
+    """Base for business-only tool inputs with runtime connection settings."""
+
+    @property
+    def instance_url(self) -> str:
+        return os.environ["SERVICENOW_INSTANCE"]
+
+    @property
+    def username(self) -> None:
+        return None
+
+    @property
+    def password(self) -> None:
+        return None
 
 class ServiceNowClient:
     """A client for making authenticated requests to the ServiceNow API."""
@@ -17,9 +35,12 @@ class ServiceNowClient:
             instance_url += '/'
         
         self.base_url = instance_url
-        if token_provider is None and (username is None or password is None):
-            raise ValueError("Basic credentials or a token provider are required.")
-        self._auth = (username, password) if token_provider is None else None
+        if username is not None or password is not None:
+            raise ValueError("Basic authentication is no longer supported.")
+        if token_provider is None:
+            from servicenow_mcp_server.auth import get_servicenow_access_token
+
+            token_provider = get_servicenow_access_token
         self._token_provider = token_provider
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -33,7 +54,6 @@ class ServiceNowClient:
                 raise RuntimeError("The token provider returned an empty access token.")
             headers["Authorization"] = f"Bearer {access_token}"
         self._client = httpx.AsyncClient(
-            auth=self._auth,
             base_url=self.base_url,
             headers=headers,
             verify=True,
