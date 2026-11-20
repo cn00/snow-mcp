@@ -3,6 +3,7 @@
 import httpx
 import os
 from typing import Dict, Any, Awaitable, Callable, Optional
+from urllib.parse import urlsplit
 from pydantic import BaseModel
 
 
@@ -31,6 +32,16 @@ class ServiceNowClient:
         password: Optional[str] = None,
         token_provider: Optional[Callable[[], Awaitable[str]]] = None,
     ):
+        parsed_url = urlsplit(instance_url)
+        if (
+            parsed_url.scheme != "https"
+            or not parsed_url.hostname
+            or parsed_url.username is not None
+            or parsed_url.password is not None
+            or parsed_url.query
+            or parsed_url.fragment
+        ):
+            raise ValueError("ServiceNow instance URL must be an HTTPS URL without credentials, query or fragment.")
         if not instance_url.endswith('/'):
             instance_url += '/'
         

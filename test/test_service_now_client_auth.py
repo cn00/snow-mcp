@@ -37,6 +37,17 @@ class ServiceNowClientAuthTests(unittest.IsolatedAsyncioTestCase):
                 password="password",
             )
 
+    def test_rejects_unsafe_instance_urls(self):
+        for instance_url in (
+            "http://instance.service-now.com",
+            "https://user:password@instance.service-now.com",
+            "https://instance.service-now.com?token=secret",
+            "https://instance.service-now.com#fragment",
+        ):
+            with self.subTest(instance_url=instance_url):
+                with self.assertRaises(ValueError):
+                    ServiceNowClient(instance_url)
+
 
 if __name__ == "__main__":
     unittest.main()
