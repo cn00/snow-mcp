@@ -1,5 +1,6 @@
 import importlib
 import json
+import os
 import unittest
 from unittest.mock import patch
 
@@ -20,6 +21,9 @@ class LambdaHandlerTests(unittest.TestCase):
         cls.addClassCleanup(environment_patch.stop)
         cls.lambda_module = importlib.import_module("servicenow_mcp_server.lambda")
         cls.handler = staticmethod(cls.lambda_module.handler)
+
+    def test_fastmcp_data_home_uses_lambda_writable_directory(self):
+        self.assertEqual(os.environ["XDG_DATA_HOME"], "/tmp/snow-mcp")
 
     def event(self, path, method="GET", body=None):
         return {

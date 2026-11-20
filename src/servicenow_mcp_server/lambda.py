@@ -1,6 +1,9 @@
 """AWS Lambda adapter for the authenticated Streamable HTTP MCP server."""
 
+import os
 from urllib.parse import urlsplit
+
+os.environ["XDG_DATA_HOME"] = "/tmp/snow-mcp"
 
 from mangum import Mangum
 from starlette.routing import Route
