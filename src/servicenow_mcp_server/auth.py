@@ -1,0 +1,137 @@
+"""Entra OAuth configuration and ServiceNow on-behalf-of token exchange."""
+
+import asyncio
+import os
+from dataclasses import dataclass
+from functools import lru_cache
+from threading import Lock
+from urllib.parse import urlsplit
+from uuid import UUID
+
+
+@dataclass(frozen=True)
+class EntraMcpConfig:
+    tenant_id: str
+    client_id: str
+    client_secret: str
+    identifier_uri: str
+    delegated_scope: str
+    public_base_url: str
+    jwt_signing_key: str
+
+    @classmethod
+    def from_environment(cls):
+        tenant_id = str(UUID(os.environ["SNOW_ENTRA_TENANT_ID"]))
+        client_id = str(UUID(os.environ["SNOW_ENTRA_CLIENT_ID"]))
+        client_secret = os.environ["SNOW_ENTRA_CLIENT_SECRET"]
+        identifier_uri = os.getenv("SNOW_ENTRA_IDENTIFIER_URI", f"api://{client_id}")
+        delegated_scope = os.environ["SNOW_ENTRA_MCP_SCOPE"]
+        public_base_url = os.environ["SNOW_MCP_PUBLIC_BASE_URL"].rstrip("/")
+        jwt_signing_key = os.environ["SNOW_MCP_JWT_SIGNING_KEY"]
+
+        parsed_url = urlsplit(public_base_url)
+        local_http = parsed_url.scheme == "http" and parsed_url.hostname in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }
+        if (
+            (parsed_url.scheme != "https" and not local_http)
+            or not parsed_url.hostname
+            or parsed_url.username
+            or parsed_url.password
+            or parsed_url.query
+            or parsed_url.fragment
+        ):
+            raise ValueError("SNOW_MCP_PUBLIC_BASE_URL must be an HTTPS URL.")
+        if not identifier_uri or any(char.isspace() for char in identifier_uri):
+            raise ValueError("SNOW_ENTRA_IDENTIFIER_URI is invalid.")
+        if not delegated_scope or "/" in delegated_scope or any(
+            char.isspace() for char in delegated_scope
+        ):
+            raise ValueError("SNOW_ENTRA_MCP_SCOPE must be an unprefixed scope name.")
+        if len(client_secret) == 0:
+            raise ValueError("SNOW_ENTRA_CLIENT_SECRET is required.")
+        if len(jwt_signing_key) < 32:
+            raise ValueError("SNOW_MCP_JWT_SIGNING_KEY must be at least 32 characters.")
+
+        return cls(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+            identifier_uri=identifier_uri,
+            delegated_scope=delegated_scope,
+            public_base_url=public_base_url,
+            jwt_signing_key=jwt_signing_key,
+        )
+
+
+class EntraOnBehalfOfTokenProvider:
+    """Exchanges an authenticated Entra assertion for a ServiceNow API token."""
+
+    def __init__(self, tenant_id, client_id, client_secret, service_now_scope, client_app=None):
+        if not service_now_scope or any(char.isspace() for char in service_now_scope):
+            raise ValueError("SERVICENOW_OBO_SCOPE must be a non-empty OAuth scope.")
+        if client_app is None:
+            import msal
+
+            client_app = msal.ConfidentialClientApplication(
+                client_id=client_id,
+                authority=f"https://login.microsoftonline.com/{tenant_id}",
+                client_credential=client_secret,
+            )
+        self._client_app = client_app
+        self._service_now_scope = service_now_scope
+        self._lock = Lock()
+
+    async def __call__(self, assertion):
+        return await asyncio.to_thread(self._exchange, assertion)
+
+    def _exchange(self, assertion):
+        with self._lock:
+            result = self._client_app.acquire_token_on_behalf_of(
+                user_assertion=assertion,
+                scopes=[self._service_now_scope],
+            )
+        access_token = result.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise RuntimeError("Entra could not issue a delegated ServiceNow token.")
+        return access_token
+
+
+def build_mcp_auth():
+    """Create the Entra-backed OAuth proxy used by remote MCP clients."""
+    from fastmcp.server.auth.providers.azure import AzureProvider
+
+    config = EntraMcpConfig.from_environment()
+    return AzureProvider(
+        client_id=config.client_id,
+        client_secret=config.client_secret,
+        tenant_id=config.tenant_id,
+        identifier_uri=config.identifier_uri,
+        required_scopes=[config.delegated_scope],
+        base_url=config.public_base_url,
+        jwt_signing_key=config.jwt_signing_key,
+    )
+
+
+@lru_cache(maxsize=1)
+def _service_now_token_provider():
+    tenant_id = str(UUID(os.environ["SNOW_ENTRA_TENANT_ID"]))
+    client_id = str(UUID(os.environ["SNOW_ENTRA_CLIENT_ID"]))
+    return EntraOnBehalfOfTokenProvider(
+        tenant_id=tenant_id,
+        client_id=client_id,
+        client_secret=os.environ["SNOW_ENTRA_CLIENT_SECRET"],
+        service_now_scope=os.environ["SERVICENOW_OBO_SCOPE"],
+    )
+
+
+async def get_servicenow_access_token():
+    """Exchange the authenticated Entra token for a ServiceNow-audience token."""
+    from fastmcp.server.dependencies import get_access_token
+
+    access_token = get_access_token()
+    if access_token is None or not access_token.token:
+        raise RuntimeError("An authenticated Entra user is required.")
+    return await _service_now_token_provider()(access_token.token)

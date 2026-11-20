@@ -6,6 +6,7 @@ import sys
 import asyncio
 from fastmcp import FastMCP, Client
 from fastmcp.tools import Tool
+from servicenow_mcp_server.auth import build_mcp_auth
 
 # Import all your tool registration functions
 from servicenow_mcp_server.incident_management import incident_tools
@@ -25,9 +26,9 @@ from servicenow_mcp_server.analytics import analytics_tools
 
 logging.basicConfig(level=logging.WARNING, format="[SERVER] %(message)s")
 
-def create_mcp_instance() -> FastMCP:
+def create_mcp_instance(auth=None) -> FastMCP:
     """Creates and populates the MCP instance with all tools for the server process."""
-    mcp = FastMCP(name="ServiceNow MCP Server")
+    mcp = FastMCP(name="ServiceNow MCP Server", auth=auth)
     
     # Register tools from all modules
     incident_tools.register_tools(mcp)
@@ -99,6 +100,9 @@ def main():
     )
     # The only CLI argument is to list tools.
     parser.add_argument('--list-tools', action='store_true', help='List all available tools and their descriptions, then exit.')
+    parser.add_argument('--transport', choices=('stdio', 'http'), default='stdio', help='Server transport. HTTP enables Entra OAuth for remote clients.')
+    parser.add_argument('--host', default='127.0.0.1', help='HTTP bind address.')
+    parser.add_argument('--port', type=int, default=8000, help='HTTP bind port.')
     # This hidden argument prevents an infinite loop.
     parser.add_argument('--server-mode', action='store_true', help=argparse.SUPPRESS)
     
@@ -120,13 +124,16 @@ def main():
     # --- Default behavior: A human is running 'snow-mcp' interactively, or a client is connecting ---
     if sys.stdin.isatty():
         print_welcome_banner()
-        print("Starting ServiceNow MCP Server...")
-        print("Waiting for a client connection over stdio.")
+        print(f"Starting ServiceNow MCP Server over {args.transport}...")
         print("Use '--list-tools' for a list of available tools.")
         print("Press Ctrl+C to exit.")
     
-    mcp_instance = create_mcp_instance()
-    mcp_instance.run(transport="stdio")
+    auth = build_mcp_auth() if args.transport == 'http' else None
+    mcp_instance = create_mcp_instance(auth=auth)
+    if args.transport == 'http':
+        mcp_instance.run(transport="http", host=args.host, port=args.port)
+    else:
+        mcp_instance.run(transport="stdio")
 
 if __name__ == "__main__":
     main()
