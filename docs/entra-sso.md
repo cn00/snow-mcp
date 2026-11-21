@@ -32,6 +32,8 @@ The MCP application must have the necessary delegated permission and consent for
 
 API paths may contain record identifiers, so protect debug logs accordingly. Authentication or token exchange failures occurring before an HTTP request will not produce an API request log.
 
+When an Entra OBO exchange fails, the server logs the OAuth error category, validated AADSTS error codes and trace/correlation IDs when available. It does not log the assertion, client secret, token, or provider error description. Use the AADSTS code and correlation ID to check Entra sign-in logs and delegated permissions; a successful MCP login alone does not establish that ServiceNow accepts the exchanged token.
+
 Generate a Redis encryption key with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` and store it as a secret. Do not generate a new key per invocation. Use a dedicated Redis database or instance for this MCP deployment; the OAuth storage collection names are shared. Rotating the encryption key or replacing local storage invalidates existing OAuth state, so clients may need to register and sign in again.
 
 ## Run

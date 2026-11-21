@@ -165,6 +165,46 @@ class EntraOnBehalfOfTokenProviderTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "could not issue"):
             await provider("entra-user-assertion")
 
+    async def test_failed_exchange_logs_only_safe_entra_diagnostics(self):
+        client_app = Mock()
+        client_app.acquire_token_on_behalf_of.return_value = {
+            "error": "invalid_grant",
+            "error_codes": [65001],
+            "error_description": "AADSTS65001 sensitive-provider-detail",
+            "trace_id": "11111111-1111-1111-1111-111111111111",
+            "correlation_id": "22222222-2222-2222-2222-222222222222",
+            "access_token": "",
+        }
+        provider = EntraOnBehalfOfTokenProvider("tenant", "client", "client-secret", "api://servicenow/access", client_app)
+        with self.assertLogs("servicenow_mcp_server.auth", level="WARNING") as captured:
+            with self.assertRaisesRegex(RuntimeError, "could not issue"):
+                await provider("user-assertion-secret")
+        output = "\n".join(captured.output)
+        for expected in ("invalid_grant", "65001", "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"):
+            self.assertIn(expected, output)
+        for sensitive in ("sensitive-provider-detail", "client-secret", "user-assertion-secret"):
+            self.assertNotIn(sensitive, output)
+
+    async def test_failed_exchange_rejects_untrusted_diagnostic_values(self):
+        client_app = Mock()
+        client_app.acquire_token_on_behalf_of.return_value = {
+            "error": "secret-token",
+            "error_codes": [True, "secret-code", -1, 999999999],
+            "error_description": "AADSTS7000215 secret-description",
+            "trace_id": "secret-trace",
+            "correlation_id": "secret-correlation",
+        }
+        provider = EntraOnBehalfOfTokenProvider("tenant", "client", "secret", "api://servicenow/access", client_app)
+        with self.assertLogs("servicenow_mcp_server.auth", level="WARNING") as captured:
+            with self.assertRaisesRegex(RuntimeError, "could not issue"):
+                await provider("assertion")
+        output = "\n".join(captured.output)
+        self.assertIn("error=unknown", output)
+        self.assertIn("7000215", output)
+        self.assertIn("trace_id=unavailable", output)
+        for sensitive in ("secret-token", "secret-code", "secret-description", "secret-trace", "secret-correlation"):
+            self.assertNotIn(sensitive, output)
+
 
 if __name__ == "__main__":
     unittest.main()

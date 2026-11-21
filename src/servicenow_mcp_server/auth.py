@@ -1,6 +1,7 @@
 """Entra OAuth configuration and ServiceNow on-behalf-of token exchange."""
 
 import asyncio
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from functools import lru_cache
 from threading import Lock
 from urllib.parse import urlsplit
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 
 def get_service_prefix():
@@ -109,6 +112,36 @@ class EntraOnBehalfOfTokenProvider:
             )
         access_token = result.get("access_token")
         if not isinstance(access_token, str) or not access_token:
+            error = result.get("error")
+            if not isinstance(error, str) or error not in {
+                "access_denied", "consent_required", "interaction_required", "invalid_client",
+                "invalid_grant", "invalid_request", "invalid_scope", "login_required",
+                "server_error", "temporarily_unavailable", "unauthorized_client",
+            }:
+                error = "unknown"
+            error_codes = result.get("error_codes")
+            codes = []
+            if isinstance(error_codes, list):
+                codes = [
+                    code for code in error_codes[:8]
+                    if type(code) is int and 0 < code < 100000000
+                ]
+            description = result.get("error_description")
+            if isinstance(description, str):
+                match = re.search(r"\bAADSTS([0-9]{5,8})\b", description)
+                if match and int(match.group(1)) not in codes:
+                    codes.append(int(match.group(1)))
+            identifiers = []
+            for name in ("trace_id", "correlation_id"):
+                value = result.get(name)
+                try:
+                    identifiers.append(str(UUID(value)) if isinstance(value, str) else "unavailable")
+                except ValueError:
+                    identifiers.append("unavailable")
+            logger.warning(
+                "Entra OBO exchange failed: error=%s aadsts_codes=%s trace_id=%s correlation_id=%s",
+                error, codes, *identifiers,
+            )
             raise RuntimeError("Entra could not issue a delegated ServiceNow token.")
         return access_token
 
