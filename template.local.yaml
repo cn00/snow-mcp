@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Local-only API Gateway HTTP API and Lambda MCP simulation
+
+Resources:
+  LocalHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+
+  LocalDependencies:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: .artifacts/lambda-layer.zip
+      CompatibleRuntimes:
+        - python3.12
+      CompatibleArchitectures:
+        - x86_64
+
+  LocalMcpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: servicenow_mcp_server.lambda.handler
+      Runtime: python3.12
+      Architectures:
+        - x86_64
+      Timeout: 30
+      Layers:
+        - !Ref LocalDependencies
+      Environment:
+        Variables:
+          SNOW_ENTRA_TENANT_ID: '00000000-0000-0000-0000-000000000001'
+          SNOW_ENTRA_CLIENT_ID: '00000000-0000-0000-0000-000000000002'
+          SNOW_ENTRA_CLIENT_SECRET: local-placeholder
+          SNOW_ENTRA_MCP_SCOPE: mcp_access
+          SNOW_MCP_JWT_SIGNING_KEY: local-placeholder-key-not-for-production
+          SNOW_MCP_PUBLIC_BASE_URL: http://localhost:3000
+          SNOW_MCP_SERVICE_PREFIX: /snow-mcp
+          XDG_DATA_HOME: /tmp/snow-mcp
+      Events:
+        Root:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocalHttpApi
+            Path: /
+            Method: ANY
+            PayloadFormatVersion: '2.0'
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocalHttpApi
+            Path: /{proxy+}
+            Method: ANY
+            PayloadFormatVersion: '2.0'

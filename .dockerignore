@@ -1,0 +1,10 @@
+**
+!Dockerfile
+!pyproject.toml
+!setup.cfg
+!README.md
+!LICENSE
+!src/
+!src/**
+**/__pycache__/
+**/*.py[cod]
