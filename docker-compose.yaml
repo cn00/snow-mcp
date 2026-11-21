@@ -1,0 +1,52 @@
+services:
+
+  api:
+    image: public.ecr.aws/lambda/python:3.12-x86_64
+    entrypoint: ["python", "-m", "servicenow_mcp_server"]
+    command: ["--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "8000:8080"
+    working_dir: /var/task
+    volumes:
+      - ./src:/var/task
+      - ./.venv:/var/task/.venv
+    env_file:
+      - ./.env
+    environment:
+      - PYTHONPATH=/var/task/.venv/lib/python3.12/site-packages:/var/task
+      - LOGLEVEL=DEBUG
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # FastAPI backend lambda. Compose reuses api/.venv from WSL through PYTHONPATH,
+  # while the Dockerfile still builds a Lambda-compatible runtime image.
+  lambda:
+    image: public.ecr.aws/lambda/python:3.12-x86_64
+    # entrypoint: ["/lambda-entrypoint.sh"]
+    command: servicenow_mcp_server.lambda.handler
+    profiles: [lambda]
+    ports:
+      - "8080:8080"
+    working_dir: /var/task
+    volumes:
+      - ./src:/var/task
+      - ./.venv:/var/task/.venv
+    env_file:
+      - ./.env
+    environment:
+      - PYTHONPATH=/var/task/.venv/lib/python3.12/site-packages:/var/task
+      - SNOW_MCP_SERVICE_PREFIX=/snow-mcp
+      - SNOW_MCP_REDIS_URL=rediss://redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  redis:
+    image: public.ecr.aws/docker/library/redis:7
+    env_file: [.env]
+    ports:
+      - 6379:6379
+    volumes:
+      - redisdata:/data
+
+volumes:
+  redisdata:
