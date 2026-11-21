@@ -6,7 +6,7 @@ This branch exposes an authenticated MCP server over Streamable HTTP. Tool input
 
 - Python 3.10 or later, an HTTPS endpoint for the MCP server, and access from the target Copilot client.
 - A single-tenant Microsoft Entra application with a client secret and an exposed delegated API scope for the MCP server. Configure v2 access tokens for this API and register `<public-base-url><service-prefix>/auth/callback` as a web redirect URI.
-- A ServiceNow API resource that accepts a delegated Entra access token acquired using the on-behalf-of (OBO) flow. Confirm its audience, scope, user mapping, and ACLs with the ServiceNow and identity administrators. This repository does not establish that the target instance supports this integration.
+- A ServiceNow API resource that accepts the delegated Entra token or SAML 2.0 assertion acquired using the on-behalf-of (OBO) flow. Confirm its authentication method, audience, scope, user mapping, and ACLs with the ServiceNow and identity administrators. This repository does not establish that the target instance supports either integration.
 
 ## Configuration
 
@@ -15,7 +15,8 @@ Supply the following environment variables to the server through your deployment
 | Variable | Description |
 | --- | --- |
 | `SERVICENOW_INSTANCE` | HTTPS URL of the ServiceNow instance. |
-| `SERVICENOW_OBO_SCOPE` | Delegated scope for the ServiceNow API resource, subject to the target identity configuration. |
+| `SERVICENOW_AUTH_MODE` | Downstream authentication mode: `oauth` (default) or `saml` for an Entra SAML 2.0 OBO assertion. |
+| `SERVICENOW_OBO_SCOPE` | OAuth mode: delegated scope for the ServiceNow API resource. SAML mode: the target SAML Entity ID followed by `/.default`. |
 | `SNOW_ENTRA_TENANT_ID` | Entra tenant UUID. |
 | `SNOW_ENTRA_CLIENT_ID` | MCP application's Entra client UUID. |
 | `SNOW_ENTRA_CLIENT_SECRET` | MCP application's client secret. |
@@ -29,6 +30,15 @@ Supply the following environment variables to the server through your deployment
 | `LOGLEVEL` | Set to `DEBUG` to log ServiceNow request methods, API paths and response statuses. Query parameters, request bodies and authorization headers are not logged. |
 
 The MCP application must have the necessary delegated permission and consent for `SERVICENOW_OBO_SCOPE`. The outbound request uses an OBO token, not the client-facing MCP token. The HTTPS certificate presented by ServiceNow must be trusted by the Python environment.
+
+For `SERVICENOW_AUTH_MODE=saml`, obtain the target service's SAML Entity ID from its SSO configuration and use, for example, `SERVICENOW_OBO_SCOPE=https://saml.example.com/.default`. The Entity ID may differ from the Entra application's Identifier URI; the `user_impersonation` scope is not the SAML OBO scope. Entra must permit the MCP application to request the target resource with consent. The client requests a SAML 2.0 assertion and sends the returned base64url assertion as `Authorization: Bearer` to ServiceNow. This mode is only usable if the specific ServiceNow REST API accepts that form of SAML bearer assertion; browser SAML SSO and an Entra application registration do not establish REST API support. It does not create a browser session or exchange a SAML assertion for a ServiceNow-issued OAuth token. Confirm the recipient, audience, user mapping and API authentication contract with the ServiceNow and Entra administrators before enabling it.
+
+```dotenv
+SERVICENOW_AUTH_MODE=saml
+SERVICENOW_OBO_SCOPE=https://saml.example.com/.default
+```
+
+Replace the example with the verified SAML Entity ID. The provider caches its configuration, so recreate the service after changing the mode or scope. Leave `SERVICENOW_AUTH_MODE` unset or set it to `oauth` to retain the existing OAuth behavior.
 
 API paths may contain record identifiers, so protect debug logs accordingly. Authentication or token exchange failures occurring before an HTTP request will not produce an API request log.
 

@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
+SAML2_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:saml2"
 
 
 def get_service_prefix():
@@ -86,16 +87,25 @@ class EntraMcpConfig:
 class EntraOnBehalfOfTokenProvider:
     """Exchanges an authenticated Entra assertion for a ServiceNow API token."""
 
-    def __init__(self, tenant_id, client_id, client_secret, service_now_scope, client_app=None):
+    def __init__(self, tenant_id, client_id, client_secret, service_now_scope, client_app=None, auth_mode="oauth"):
+        if not isinstance(auth_mode, str) or auth_mode.lower() not in {"oauth", "saml"}:
+            raise ValueError("SERVICENOW_AUTH_MODE must be oauth or saml.")
+        self._auth_mode = auth_mode.lower()
         if not service_now_scope or any(char.isspace() for char in service_now_scope):
             raise ValueError("SERVICENOW_OBO_SCOPE must be a non-empty OAuth scope.")
+        if self._auth_mode == "saml" and (
+            not service_now_scope.endswith("/.default") or len(service_now_scope) <= len("/.default")
+        ):
+            raise ValueError("SAML mode requires the SAML Entity ID followed by /.default.")
         if client_app is None:
             import msal
 
+            options = {"exclude_scopes": ["profile", "offline_access"]} if self._auth_mode == "saml" else {}
             client_app = msal.ConfidentialClientApplication(
                 client_id=client_id,
                 authority=f"https://login.microsoftonline.com/{tenant_id}",
                 client_credential=client_secret,
+                **options,
             )
         self._client_app = client_app
         self._service_now_scope = service_now_scope
@@ -105,10 +115,12 @@ class EntraOnBehalfOfTokenProvider:
         return await asyncio.to_thread(self._exchange, assertion)
 
     def _exchange(self, assertion):
+        options = {"data": {"requested_token_type": SAML2_TOKEN_TYPE}} if self._auth_mode == "saml" else {}
         with self._lock:
             result = self._client_app.acquire_token_on_behalf_of(
                 user_assertion=assertion,
                 scopes=[self._service_now_scope],
+                **options,
             )
         access_token = result.get("access_token")
         if not isinstance(access_token, str) or not access_token:
@@ -143,6 +155,12 @@ class EntraOnBehalfOfTokenProvider:
                 error, codes, *identifiers,
             )
             raise RuntimeError("Entra could not issue a delegated ServiceNow token.")
+        if self._auth_mode == "saml" and (
+            result.get("issued_token_type") != SAML2_TOKEN_TYPE
+            or str(result.get("token_type", "")).lower() != "bearer"
+            or not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", access_token)
+        ):
+            raise RuntimeError("Entra did not issue a valid SAML 2.0 bearer assertion.")
         return access_token
 
 
@@ -202,6 +220,7 @@ def _service_now_token_provider():
         client_id=client_id,
         client_secret=os.environ["SNOW_ENTRA_CLIENT_SECRET"],
         service_now_scope=os.environ["SERVICENOW_OBO_SCOPE"],
+        auth_mode=os.getenv("SERVICENOW_AUTH_MODE", "oauth"),
     )
 
 

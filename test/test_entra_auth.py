@@ -1,9 +1,10 @@
 import importlib.util
+import json
 import types
 import unittest
 from unittest.mock import Mock, patch
 
-from servicenow_mcp_server.auth import EntraMcpConfig, EntraOnBehalfOfTokenProvider, _build_redis_storage, build_mcp_auth
+from servicenow_mcp_server.auth import EntraMcpConfig, EntraOnBehalfOfTokenProvider, _build_redis_storage, _service_now_token_provider, build_mcp_auth
 
 
 class RedisStorageTests(unittest.TestCase):
@@ -147,6 +148,99 @@ class EntraOnBehalfOfTokenProviderTests(unittest.IsolatedAsyncioTestCase):
             user_assertion="entra-user-assertion",
             scopes=["api://servicenow/access_as_user"],
         )
+
+    async def test_saml_mode_requests_a_saml2_assertion(self):
+        client_app = Mock()
+        client_app.acquire_token_on_behalf_of.return_value = {
+            "access_token": "c2FtbC1hc3NlcnRpb24",
+            "token_type": "Bearer",
+            "issued_token_type": "urn:ietf:params:oauth:token-type:saml2",
+        }
+        provider = EntraOnBehalfOfTokenProvider(
+            "tenant", "client", "secret", "https://saml.example.com/.default", client_app, auth_mode="saml"
+        )
+        self.assertEqual(await provider("entra-user-assertion"), "c2FtbC1hc3NlcnRpb24")
+        client_app.acquire_token_on_behalf_of.assert_called_once_with(
+            user_assertion="entra-user-assertion",
+            scopes=["https://saml.example.com/.default"],
+            data={"requested_token_type": "urn:ietf:params:oauth:token-type:saml2"},
+        )
+
+    async def test_saml_mode_rejects_unexpected_or_unsafe_tokens(self):
+        for token, token_type, issued_type in (
+            ("jwt-token", "Bearer", "urn:ietf:params:oauth:token-type:access_token"),
+            ("saml-token", "Bearer", None),
+            ("saml-token", "Other", "urn:ietf:params:oauth:token-type:saml2"),
+            ("saml-token\r\nInjected: value", "Bearer", "urn:ietf:params:oauth:token-type:saml2"),
+        ):
+            with self.subTest(token_type=token_type, issued_type=issued_type):
+                client_app = Mock()
+                client_app.acquire_token_on_behalf_of.return_value = {
+                    "access_token": token, "token_type": token_type, "issued_token_type": issued_type,
+                }
+                provider = EntraOnBehalfOfTokenProvider(
+                    "tenant", "client", "secret", "https://saml.example.com/.default", client_app, auth_mode="saml"
+                )
+                with self.assertRaisesRegex(RuntimeError, "valid SAML 2.0 bearer assertion"):
+                    await provider("entra-user-assertion")
+
+    def test_auth_mode_and_saml_scope_are_validated(self):
+        with self.assertRaisesRegex(ValueError, "SERVICENOW_AUTH_MODE"):
+            EntraOnBehalfOfTokenProvider("tenant", "client", "secret", "scope", Mock(), auth_mode="other")
+        for scope in ("https://saml.example.com/user_impersonation", "/.default", "https://saml.example.com/.default other"):
+            with self.subTest(scope=scope), self.assertRaises(ValueError):
+                EntraOnBehalfOfTokenProvider("tenant", "client", "secret", scope, Mock(), auth_mode="saml")
+
+    def test_saml_msal_client_excludes_optional_oidc_scopes(self):
+        with patch("msal.ConfidentialClientApplication") as client_app:
+            EntraOnBehalfOfTokenProvider("tenant", "client", "secret", "https://saml.example.com/.default", auth_mode="saml")
+        self.assertEqual(client_app.call_args.kwargs["exclude_scopes"], ["profile", "offline_access"])
+
+    async def test_saml_parameters_are_forwarded_by_msal(self):
+        from msal import ConfidentialClientApplication
+        from msal.oauth2cli.oauth2 import Client
+
+        response = {
+            "access_token": "c2FtbC1hc3NlcnRpb24",
+            "token_type": "Bearer",
+            "issued_token_type": "urn:ietf:params:oauth:token-type:saml2",
+        }
+        http_client = Mock()
+        http_client.post.return_value = Mock(status_code=200, text=json.dumps(response))
+        client_app = object.__new__(ConfidentialClientApplication)
+        client_app.client = Client(
+            {"token_endpoint": "https://login.example.com/tenant/oauth2/v2.0/token"},
+            "client", http_client=http_client, client_secret="secret",
+        )
+        client_app._exclude_scopes = frozenset({"profile", "offline_access"})
+        client_app._client_capabilities = None
+        client_app._build_telemetry_context = Mock()
+        client_app._build_telemetry_context.return_value.generate_headers.return_value = {}
+        provider = EntraOnBehalfOfTokenProvider(
+            "tenant", "client", "secret", "https://saml.example.com/.default", client_app, auth_mode="saml"
+        )
+        self.assertEqual(await provider("entra-user-assertion"), "c2FtbC1hc3NlcnRpb24")
+        body = http_client.post.call_args.kwargs["data"]
+        self.assertEqual(body["requested_token_type"], "urn:ietf:params:oauth:token-type:saml2")
+        self.assertEqual(body["requested_token_use"], "on_behalf_of")
+        self.assertEqual(body["grant_type"], "urn:ietf:params:oauth:grant-type:jwt-bearer")
+        self.assertEqual(body["assertion"], "entra-user-assertion")
+        self.assertEqual(set(body["scope"].split()), {"openid", "https://saml.example.com/.default"})
+
+    def test_environment_selects_saml_mode(self):
+        environment = {
+            "SNOW_ENTRA_TENANT_ID": "00000000-0000-0000-0000-000000000001",
+            "SNOW_ENTRA_CLIENT_ID": "00000000-0000-0000-0000-000000000002",
+            "SNOW_ENTRA_CLIENT_SECRET": "secret",
+            "SERVICENOW_OBO_SCOPE": "https://saml.example.com/.default",
+            "SERVICENOW_AUTH_MODE": "saml",
+        }
+        _service_now_token_provider.cache_clear()
+        self.addCleanup(_service_now_token_provider.cache_clear)
+        with patch.dict("os.environ", environment, clear=True), patch("servicenow_mcp_server.auth.EntraOnBehalfOfTokenProvider") as provider:
+            _service_now_token_provider()
+        self.assertEqual(provider.call_args.kwargs["auth_mode"], "saml")
+        self.assertEqual(provider.call_args.kwargs["service_now_scope"], environment["SERVICENOW_OBO_SCOPE"])
 
     async def test_does_not_return_error_payload_as_token(self):
         client_app = Mock()

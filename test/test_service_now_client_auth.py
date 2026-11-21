@@ -31,6 +31,60 @@ class ServiceNowClientAuthTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertIs(client._client.kwargs["verify"], True)
 
+    async def test_saml_assertion_is_used_as_bearer_token(self):
+        from servicenow_mcp_server.auth import EntraOnBehalfOfTokenProvider
+
+        client_app = Mock()
+        client_app.acquire_token_on_behalf_of.return_value = {
+            "access_token": "c2FtbC1hc3NlcnRpb24",
+            "token_type": "Bearer",
+            "issued_token_type": "urn:ietf:params:oauth:token-type:saml2",
+        }
+        provider = EntraOnBehalfOfTokenProvider(
+            "tenant", "client", "secret", "https://saml.example.com/.default", client_app, auth_mode="saml"
+        )
+
+        async def token_provider():
+            return await provider("entra-user-assertion")
+
+        with patch("servicenow_mcp_server.utils.httpx.AsyncClient", FakeAsyncClient):
+            async with ServiceNowClient("https://instance.service-now.com", token_provider=token_provider) as client:
+                self.assertEqual(client._client.kwargs["headers"]["Authorization"], "Bearer c2FtbC1hc3NlcnRpb24")
+
+    async def test_saml_obo_assertion_reaches_table_api(self):
+        from servicenow_mcp_server.auth import EntraOnBehalfOfTokenProvider
+
+        client_app = Mock()
+        client_app.acquire_token_on_behalf_of.return_value = {
+            "access_token": "c2FtbC1hc3NlcnRpb24",
+            "token_type": "Bearer",
+            "issued_token_type": "urn:ietf:params:oauth:token-type:saml2",
+        }
+        provider = EntraOnBehalfOfTokenProvider(
+            "tenant", "client", "secret", "https://saml.example.com/.default", client_app, auth_mode="saml"
+        )
+        requests = []
+
+        def handle_request(request):
+            requests.append(request)
+            return httpx.Response(200, json={"result": [{"sys_id": "record"}]})
+
+        async def token_provider():
+            return await provider("entra-user-assertion")
+
+        real_async_client = httpx.AsyncClient
+        transport = httpx.MockTransport(handle_request)
+        with patch(
+            "servicenow_mcp_server.utils.httpx.AsyncClient",
+            side_effect=lambda **kwargs: real_async_client(transport=transport, **kwargs),
+        ):
+            async with ServiceNowClient("https://instance.service-now.com", token_provider=token_provider) as client:
+                result = await client.send_request("GET", "/api/now/table/incident")
+
+        self.assertEqual(result["result"][0]["sys_id"], "record")
+        self.assertEqual(requests[0].url.path, "/api/now/table/incident")
+        self.assertEqual(requests[0].headers["Authorization"], "Bearer c2FtbC1hc3NlcnRpb24")
+
     def test_rejects_basic_credentials(self):
         with self.assertRaisesRegex(ValueError, "Basic authentication is no longer supported"):
             ServiceNowClient(
