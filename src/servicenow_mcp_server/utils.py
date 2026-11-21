@@ -1,10 +1,15 @@
 # src/servicenow_mcp_server/utils.py
 
 import httpx
+import logging
 import os
 from typing import Dict, Any, Awaitable, Callable, Optional
 from urllib.parse import urlsplit
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+if os.getenv("LOGLEVEL", "").upper() == "DEBUG":
+    logger.setLevel(logging.DEBUG)
 
 
 class ServiceNowToolParams(BaseModel):
@@ -76,13 +81,24 @@ class ServiceNowClient:
         """Closes the httpx client when exiting an 'async with' block."""
         if self._client:
             await self._client.aclose()
+
+    async def _request(self, method, endpoint, **kwargs):
+        path = urlsplit(endpoint).path
+        logger.debug("ServiceNow API request: %s %s", method, path)
+        try:
+            response = await self._client.request(method=method, url=endpoint, **kwargs)
+        except Exception as exc:
+            logger.debug("ServiceNow API request failed: %s %s (%s)", method, path, type(exc).__name__)
+            raise
+        logger.debug("ServiceNow API response: %s %s status=%s", method, path, response.status_code)
+        return response
     
     async def send_request(self, method: str, endpoint: str, data: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Sends an API request to a ServiceNow endpoint."""
         if not self._client:
             raise RuntimeError("Client not initialized. Use 'async with ServiceNowClient(...)'")
         try:
-            response = await self._client.request(method=method, url=endpoint, json=data, params=params, headers={"Accept": "application/json", "Content-Type": "application/json"})
+            response = await self._request(method, endpoint, json=data, params=params, headers={"Accept": "application/json", "Content-Type": "application/json"})
             response.raise_for_status()
 
             # THE FIX: Handle successful but empty responses (like from DELETE)
@@ -104,9 +120,9 @@ class ServiceNowClient:
             final_headers.update(headers)
             
         try:
-            response = await self._client.request(
-                method=method,
-                url=endpoint,
+            response = await self._request(
+                method,
+                endpoint,
                 params=params,
                 content=data,
                 headers=final_headers

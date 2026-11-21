@@ -26,8 +26,11 @@ Supply the following environment variables to the server through your deployment
 | `SNOW_MCP_JWT_SIGNING_KEY` | Stable, high-entropy secret of at least 32 characters used by the OAuth proxy. |
 | `SNOW_MCP_REDIS_URL` | Optional Redis URL for shared OAuth state. Remote servers require `rediss://`; `redis://` is allowed only for loopback development. Query parameters are not supported. |
 | `SNOW_MCP_REDIS_ENCRYPTION_KEY` | Fernet key for encrypting OAuth data in Redis, required when `SNOW_MCP_REDIS_URL` is set. Use the same stable secret across instances. |
+| `LOGLEVEL` | Set to `DEBUG` to log ServiceNow request methods, API paths and response statuses. Query parameters, request bodies and authorization headers are not logged. |
 
 The MCP application must have the necessary delegated permission and consent for `SERVICENOW_OBO_SCOPE`. The outbound request uses an OBO token, not the client-facing MCP token. The HTTPS certificate presented by ServiceNow must be trusted by the Python environment.
+
+API paths may contain record identifiers, so protect debug logs accordingly. Authentication or token exchange failures occurring before an HTTP request will not produce an API request log.
 
 Generate a Redis encryption key with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` and store it as a secret. Do not generate a new key per invocation. Use a dedicated Redis database or instance for this MCP deployment; the OAuth storage collection names are shared. Rotating the encryption key or replacing local storage invalidates existing OAuth state, so clients may need to register and sign in again.
 
