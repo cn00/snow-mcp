@@ -8,6 +8,64 @@ This branch exposes an authenticated MCP server over Streamable HTTP. Tool input
 - A single-tenant Microsoft Entra application with a client secret and an exposed delegated API scope for the MCP server. Configure v2 access tokens for this API and register `<public-base-url><service-prefix>/auth/callback` as a web redirect URI.
 - A ServiceNow API resource that accepts the delegated Entra token or SAML 2.0 assertion acquired using the on-behalf-of (OBO) flow. Confirm its authentication method, audience, scope, user mapping, and ACLs with the ServiceNow and identity administrators. This repository does not establish that the target instance supports either integration.
 
+## Login Flow
+
+The two Entra participants represent app registrations in the same Entra tenant. Browser SSO and MCP authentication are separate flows:
+
+```mermaid
+sequenceDiagram
+	actor User
+	participant Agent as Agent / Copilot
+	participant Browser as Browser
+	participant MCP as snow-mcp server
+	participant EntraMCP as Entra ID (snow-mcp-dev)
+	participant EntraSnow as Entra ID (snow-dev)
+	participant Snow as ServiceNow Web / API
+
+	opt ServiceNow browser SSO
+		User->>Browser: Select Microsoft Entra login
+		Browser->>Snow: Start OIDC login
+		Snow-->>Browser: Redirect to Entra
+		Browser->>EntraSnow: Authenticate and authorize
+		EntraSnow-->>Browser: Redirect with authorization code
+		Browser->>Snow: Return to configured callback
+		Snow->>EntraSnow: Exchange code for tokens
+		EntraSnow-->>Snow: ID token and access token
+		Snow->>Snow: Validate identity and map user
+		Snow-->>Browser: Establish ServiceNow session
+	end
+
+	Agent->>MCP: Discover OAuth and request authorization
+	MCP-->>Agent: OAuth endpoints and registration metadata
+	Agent->>Browser: Open authorization flow
+	Browser->>MCP: Start authorization
+	MCP-->>Browser: Redirect to Entra
+	Browser->>EntraMCP: Authenticate and authorize MCP scope
+	EntraMCP-->>Browser: Redirect with authorization code
+	Browser->>MCP: Return to service-prefix/auth/callback
+	MCP->>EntraMCP: Exchange code for Entra tokens
+	EntraMCP-->>MCP: Entra tokens for MCP
+	MCP-->>Browser: Redirect to agent with authorization code
+	Browser-->>Agent: Return authorization code
+	Agent->>MCP: Exchange code for MCP token
+	MCP-->>Agent: FastMCP-issued token
+	Agent->>MCP: Call tool with MCP token
+	MCP->>MCP: Validate token and retrieve upstream Entra token
+	MCP->>EntraSnow: OBO exchange for ServiceNow API scope
+	EntraSnow-->>MCP: Delegated access token
+	MCP->>Snow: API request with delegated bearer token
+	Snow->>Snow: Validate token, map user, and enforce ACLs
+	alt Token and permissions accepted
+		Snow-->>MCP: API response
+		MCP-->>Agent: Tool result
+	else Authentication or authorization fails
+		Snow-->>MCP: 401 or 403
+		MCP-->>Agent: Tool error
+	end
+```
+
+The OBO step shown is OAuth mode. Browser SSO success does not prove that the ServiceNow API accepts the OBO token; validate token audience, claims, user mapping, and ACLs separately.
+
 ## Configuration
 
 Supply the following environment variables to the server through your deployment's secret management. Do not commit credentials.
