@@ -38,6 +38,23 @@ python -m pip install -e .
 snow-mcp --host 127.0.0.1 --port 8000
 ```
 
+Build and run the standalone image without mounting a host virtual environment or source tree:
+
+```bash
+docker build -t snow-mcp:local .
+docker run --rm --env-file .env -p 3000:8080 snow-mcp:local
+```
+
+Set `SNOW_MCP_PUBLIC_BASE_URL` in the environment to the public origin used by the client, for example `http://localhost:3000` for local testing. The image stores local OAuth state under `/tmp/snow-mcp`; mount persistent storage there or configure shared Redis if state must survive container replacement. The image does not include credentials from `.env`.
+
+If dependency downloads require an enterprise proxy CA, provide a trusted CA bundle as a BuildKit secret instead of disabling TLS verification:
+
+```bash
+docker build --secret id=pip_ca,src=/path/to/trusted-ca-bundle.pem -t snow-mcp:local .
+```
+
+The build-time CA secret is not installed into the runtime image. Configure runtime trust separately when the ServiceNow or Entra connection requires an enterprise CA.
+
 For local Compose development, install dependencies into a Linux Python 3.12 `.venv` and configure the required environment variables in `.env`, then run `docker compose up -d api`. Configure `SNOW_MCP_PUBLIC_BASE_URL` to match the host address and port in your Compose configuration. The standalone server accepts requests with the configured service prefix, or with the prefix stripped by a reverse proxy. Any reverse proxy must also forward the root-level discovery routes.
 
 For a single local instance, leave `SNOW_MCP_REDIS_URL` unset to use local OAuth storage. That storage is not shared and may be lost when the container is recreated. The Redis service in the local Compose example does not configure TLS and cannot be used with `rediss://`; configure a TLS-enabled Redis endpoint and `SNOW_MCP_REDIS_ENCRYPTION_KEY` before enabling shared storage.
