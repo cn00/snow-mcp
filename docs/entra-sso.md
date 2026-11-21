@@ -72,6 +72,15 @@ The build-time CA secret is not installed into the runtime image. Configure runt
 
 For local Compose development, install dependencies into a Linux Python 3.12 `.venv` and configure the required environment variables in `.env`, then run `docker compose up -d api`. Configure `SNOW_MCP_PUBLIC_BASE_URL` to match the host address and port in your Compose configuration. The standalone server accepts requests with the configured service prefix, or with the prefix stripped by a reverse proxy. Any reverse proxy must also forward the root-level discovery routes.
 
+If an approved enterprise TLS inspection CA is required, export its trusted root certificate to `certs/zscaler-root.pem` and combine it with the existing public CA bundle:
+
+```bash
+openssl crl2pkcs7 -nocrl -certfile .venv/lib/python3.12/site-packages/certifi/cacert.pem -certfile certs/zscaler-root.pem -outform DER | openssl pkcs7 -inform DER -print_certs -out certs/zscaler-ca-bundle.pem
+docker compose -f docker-compose.yaml -f docker-compose.zscaler.yaml up -d --no-deps api
+```
+
+The optional override mounts this generated bundle read-only for HTTPX and Requests. Certificate files under `certs/` are local and ignored by Git. Rebuild the bundle after updating the public CA bundle or rotating the enterprise root certificate. Use only a root certificate verified by your organization; do not disable TLS verification.
+
 For a single local instance, leave `SNOW_MCP_REDIS_URL` unset to use local OAuth storage. That storage is not shared and may be lost when the container is recreated. The Redis service in the local Compose example does not configure TLS and cannot be used with `rediss://`; configure a TLS-enabled Redis endpoint and `SNOW_MCP_REDIS_ENCRYPTION_KEY` before enabling shared storage.
 
 Terminate TLS at a trusted reverse proxy and route the MCP endpoint, OAuth endpoints, and `/.well-known` discovery paths to the service. Prevent clients from bypassing the proxy. The public MCP URL is `<public-base-url><service-prefix>/mcp`; the prefix is empty when unset. For an existing deployment with a path in `SNOW_MCP_PUBLIC_BASE_URL`, move that path to `SNOW_MCP_SERVICE_PREFIX`; a base URL containing a path is rejected. Configure Redis for shared OAuth state across replicas; otherwise the default storage is local and is not shared.

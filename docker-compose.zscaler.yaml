@@ -1,0 +1,7 @@
+services:
+  api:
+    volumes:
+      - ./certs/zscaler-ca-bundle.pem:/etc/ssl/certs/zscaler-ca-bundle.pem:ro
+    environment:
+      - SSL_CERT_FILE=/etc/ssl/certs/zscaler-ca-bundle.pem
+      - REQUESTS_CA_BUNDLE=/etc/ssl/certs/zscaler-ca-bundle.pem
