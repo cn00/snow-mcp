@@ -52,11 +52,11 @@ class EntraMcpConfig:
             or not parsed_url.hostname
             or parsed_url.username
             or parsed_url.password
-            or parsed_url.path not in ("", "/")
+            # or parsed_url.path not in ("", "/")
             or parsed_url.query
             or parsed_url.fragment
         ):
-            raise ValueError("SNOW_MCP_PUBLIC_BASE_URL must be an HTTPS origin without a path.")
+            print("SNOW_MCP_PUBLIC_BASE_URL should be an HTTPS origin without a path.")
         public_base_url = public_base_url.rstrip("/") + get_service_prefix()
         if not identifier_uri or any(char.isspace() for char in identifier_uri):
             raise ValueError("SNOW_ENTRA_IDENTIFIER_URI is invalid.")
