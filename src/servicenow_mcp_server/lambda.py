@@ -2,15 +2,13 @@
 
 import os
 from contextlib import asynccontextmanager
-from urllib.parse import urlsplit
 
 os.environ["XDG_DATA_HOME"] = "/tmp/snow-mcp"
 
 from mangum import Mangum
-from starlette.routing import Route
 
 from servicenow_mcp_server.auth import build_mcp_auth, get_service_prefix
-from servicenow_mcp_server.server import create_mcp_instance
+from servicenow_mcp_server.server import add_authorization_metadata_alias, create_mcp_instance
 
 
 def _api_gateway_base_path(event):
@@ -43,13 +41,5 @@ def handler(event, context):
                 await redis_client.aclose()
 
         app.router.lifespan_context = lifespan
-    issuer_path = urlsplit(str(getattr(auth, "issuer_url", "") or "")).path.rstrip("/")
-    metadata_path = "/.well-known/oauth-authorization-server"
-    if issuer_path and not any(route.path == metadata_path + issuer_path for route in app.routes):
-        for route in app.routes:
-            if route.path == metadata_path:
-                app.routes.append(
-                    Route(metadata_path + issuer_path, endpoint=route.endpoint, methods=route.methods)
-                )
-                break
+    add_authorization_metadata_alias(app, auth)
     return Mangum(app, lifespan="auto", api_gateway_base_path=base_path)(event, context)

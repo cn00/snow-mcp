@@ -190,6 +190,28 @@ class LambdaHandlerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.lambda_module._api_gateway_base_path(self.event("/snow/mcp"))
 
+    def test_standalone_prefixed_gateway_routes_and_discovery(self):
+        from starlette.testclient import TestClient
+        from servicenow_mcp_server.auth import build_mcp_auth
+        from servicenow_mcp_server.server import create_http_app
+
+        with patch.dict(
+            "os.environ",
+            {"SNOW_MCP_PUBLIC_BASE_URL": "https://mcp.example.com", "SNOW_MCP_SERVICE_PREFIX": "/snow"},
+        ):
+            with TestClient(create_http_app(build_mcp_auth())) as client:
+                resource = client.get("/.well-known/oauth-protected-resource/snow/mcp")
+                self.assertEqual(resource.status_code, 200)
+                self.assertEqual(resource.json()["resource"], "https://mcp.example.com/snow/mcp")
+                metadata = client.get("/.well-known/oauth-authorization-server/snow")
+                self.assertEqual(metadata.status_code, 200)
+                self.assertEqual(metadata.json()["issuer"], "https://mcp.example.com/snow")
+                self.assertNotEqual(client.get("/snow/authorize").status_code, 404)
+                self.assertNotEqual(client.get("/authorize").status_code, 404)
+                for path in ("/snow/mcp", "/mcp"):
+                    self.assertEqual(client.post(path, json={}).status_code, 401)
+                self.assertEqual(client.post("/snowman/mcp", json={}).status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

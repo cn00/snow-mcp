@@ -4,9 +4,12 @@ import logging
 import argparse
 import sys
 import asyncio
+from urllib.parse import urlsplit
 from fastmcp import FastMCP, Client
 from fastmcp.tools import Tool
-from servicenow_mcp_server.auth import build_mcp_auth
+from starlette.routing import Route
+import uvicorn
+from servicenow_mcp_server.auth import build_mcp_auth, get_service_prefix
 
 # Import all your tool registration functions
 from servicenow_mcp_server.incident_management import incident_tools
@@ -49,6 +52,45 @@ def create_mcp_instance(auth=None) -> FastMCP:
     analytics_tools.register_tools(mcp)
     
     return mcp
+
+
+class ServicePrefixMiddleware:
+    def __init__(self, app, prefix):
+        self.app = app
+        self.prefix = prefix
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in {"http", "websocket"}:
+            path = scope["path"]
+            if path == self.prefix or path.startswith(self.prefix + "/"):
+                scope = dict(scope)
+                scope["path"] = path[len(self.prefix):] or "/"
+                raw_path = scope.get("raw_path")
+                raw_prefix = self.prefix.encode()
+                if raw_path == raw_prefix or (raw_path and raw_path.startswith(raw_prefix + b"/")):
+                    scope["raw_path"] = raw_path[len(raw_prefix):] or b"/"
+        await self.app(scope, receive, send)
+
+
+def add_authorization_metadata_alias(app, auth):
+    issuer_path = urlsplit(str(getattr(auth, "issuer_url", "") or "")).path.rstrip("/")
+    metadata_path = "/.well-known/oauth-authorization-server"
+    if issuer_path and not any(route.path == metadata_path + issuer_path for route in app.routes):
+        for route in app.routes:
+            if route.path == metadata_path:
+                app.routes.append(
+                    Route(metadata_path + issuer_path, endpoint=route.endpoint, methods=route.methods)
+                )
+                break
+
+
+def create_http_app(auth):
+    app = create_mcp_instance(auth=auth).http_app(transport="http")
+    add_authorization_metadata_alias(app, auth)
+    prefix = get_service_prefix()
+    if prefix:
+        app.add_middleware(ServicePrefixMiddleware, prefix=prefix)
+    return app
 
 def print_welcome_banner():
     """Prints a custom welcome banner."""
@@ -127,8 +169,8 @@ def main():
         print("Use '--list-tools' for a list of available tools.")
         print("Press Ctrl+C to exit.")
     
-    mcp_instance = create_mcp_instance(auth=build_mcp_auth())
-    mcp_instance.run(transport="http", host=args.host, port=args.port)
+    app = create_http_app(auth=build_mcp_auth())
+    uvicorn.run(app, host=args.host, port=args.port)
 
 if __name__ == "__main__":
     main()

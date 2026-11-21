@@ -38,7 +38,7 @@ python -m pip install -e .
 snow-mcp --host 127.0.0.1 --port 8000
 ```
 
-For local Compose development, install dependencies into a Linux Python 3.12 `.venv` and configure the required environment variables in `.env`, then run `docker compose up -d api`. The API listens on port 8000 on the host. For direct local access, set `SNOW_MCP_PUBLIC_BASE_URL=http://localhost:8000` and leave `SNOW_MCP_SERVICE_PREFIX` empty. A nonempty prefix requires a reverse proxy that routes and strips the prefix, as well as the root-level discovery routes.
+For local Compose development, install dependencies into a Linux Python 3.12 `.venv` and configure the required environment variables in `.env`, then run `docker compose up -d api`. Configure `SNOW_MCP_PUBLIC_BASE_URL` to match the host address and port in your Compose configuration. The standalone server accepts requests with the configured service prefix, or with the prefix stripped by a reverse proxy. Any reverse proxy must also forward the root-level discovery routes.
 
 For a single local instance, leave `SNOW_MCP_REDIS_URL` unset to use local OAuth storage. That storage is not shared and may be lost when the container is recreated. The Redis service in the local Compose example does not configure TLS and cannot be used with `rediss://`; configure a TLS-enabled Redis endpoint and `SNOW_MCP_REDIS_ENCRYPTION_KEY` before enabling shared storage.
 
