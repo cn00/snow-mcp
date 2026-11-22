@@ -1,0 +1,31 @@
+### lambda
+POST {{base}}/2015-03-31/functions/function/invocations
+Content-Type: application/json
+
+{
+    "rawPath": "/.well-known/oauth-protected-resource/snow-mcp/mcp",
+    "version": "2.0",
+    "routeKey": "$default",
+    "rawQueryString": "",
+    "headers": {"host": "localhost:8080"},
+    "requestContext": {
+        "http": {
+            "method": "GET",
+            "path": "/.well-known/oauth-protected-resource/snow-mcp/mcp",
+            "sourceIp": "127.0.0.1",
+            "protocol": "HTTP/1.1"
+        },
+        "stage": "$default"
+    },
+    "isBase64Encoded": false
+}
+
+### metadata
+GET {{base}}/.well-known/oauth-protected-resource/{{prefix}}/mcp HTTP/2
+
+### Discovered authorization
+GET {{base}}/.well-known/oauth-authorization-server/{{prefix}}
+
+### auth
+GET {{base}}/{{prefix}}/mcp
+
