@@ -170,7 +170,7 @@ def main():
         print("Press Ctrl+C to exit.")
     
     app = create_http_app(auth=build_mcp_auth())
-    uvicorn.run(app, host=args.host, port=args.port)
+    uvicorn.run(app, host=args.host, port=args.port, log_config="servicenow_mcp_server/logging.yaml")
 
 if __name__ == "__main__":
     main()
